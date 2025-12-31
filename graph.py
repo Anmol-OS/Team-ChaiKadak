@@ -1,11 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from nodes import ForensicNodes, ForensicState
 
-
-# ============================================================
-# ROUTING LOGIC (PURE, SIDE-EFFECT FREE)
-# ============================================================
-
 def route_next_exam(state: ForensicState) -> str:
     """
     Decide which exam to run next based on remaining planned_run.
@@ -25,7 +20,6 @@ def route_next_exam(state: ForensicState) -> str:
     if "osint" in planned:
         return "osint"
 
-    # Absolute safety fallback
     return "confidence"
 
 
@@ -39,10 +33,6 @@ def exam_router(state: ForensicState):
     """
     return state
 
-
-# ============================================================
-# GRAPH CONSTRUCTION
-# ============================================================
 
 def create_forensic_graph():
     """
@@ -58,27 +48,18 @@ def create_forensic_graph():
     engine = ForensicNodes()
     graph = StateGraph(ForensicState)
 
-    # ---------------- Nodes ----------------
 
     graph.add_node("metadata", engine.metadata_node)
     graph.add_node("planner", engine.planner_node)
-
     graph.add_node("visual_environment", engine.visual_environment_node)
     graph.add_node("ela", engine.ela_node)
     graph.add_node("osint", engine.osint_node)
-
     graph.add_node("exam_router", exam_router)
-
     graph.add_node("confidence", engine.confidence_node)
     graph.add_node("report", engine.report_node)
-
-    # ---------------- Edges ----------------
-
-    # Start → Metadata → Planner
     graph.add_edge(START, "metadata")
     graph.add_edge("metadata", "planner")
 
-    # Planner → First exam or confidence
     graph.add_conditional_edges(
         "planner",
         route_next_exam,
@@ -90,12 +71,10 @@ def create_forensic_graph():
         },
     )
 
-    # Every exam → router (NO direct exam-to-exam jumps)
     graph.add_edge("visual_environment", "exam_router")
     graph.add_edge("ela", "exam_router")
     graph.add_edge("osint", "exam_router")
 
-    # Router → next exam or confidence
     graph.add_conditional_edges(
         "exam_router",
         route_next_exam,
@@ -107,16 +86,11 @@ def create_forensic_graph():
         },
     )
 
-    # Finalization
     graph.add_edge("confidence", "report")
     graph.add_edge("report", END)
 
     return graph.compile()
 
-
-# ============================================================
-# SANITY CHECK
-# ============================================================
 
 if __name__ == "__main__":
     app = create_forensic_graph()

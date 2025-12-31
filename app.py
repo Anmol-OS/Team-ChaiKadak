@@ -6,7 +6,6 @@ from graph import create_forensic_graph
 from nodes import ForensicState
 import json
 
-# Page configuration
 st.set_page_config(
     page_title="Forensic Image Analyzer",
     page_icon="🔍",
@@ -14,7 +13,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for beautiful styling
 st.markdown("""
 <style>
     /* Main theme colors */
@@ -199,7 +197,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header
+
 st.markdown("""
 <div class="main-header">
     <h1>🔍 Forensic Image Analyzer</h1>
@@ -207,11 +205,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar
 with st.sidebar:
     st.markdown("### 📋 About This Tool")
     st.info("""
-    This forensic analyzer uses multiple examination techniques to assess image authenticity:
+    This forensic analyzer is an agent that chooses between multiple examination techniques to assess image authenticity.
+    The core examinations that the agent may execute include:
     
     - **Metadata Analysis**: Extracts EXIF data
     - **Visual Analysis**: AI-powered scene understanding
@@ -224,7 +222,7 @@ with st.sidebar:
     with col1:
         st.metric("API Status", "🟢 Active")
     with col2:
-        st.metric("Version", "2.0")
+        st.metric("Team", "ChaiKadak")
     
     st.markdown("---")
     st.markdown("### 📖 How It Works")
@@ -235,8 +233,7 @@ with st.sidebar:
     4. Comprehensive report is generated
     """)
 
-# Main content area
-tab1, tab2, tab3 = st.tabs(["🔬 Analysis", "📊 Results", "ℹ️ Information"])
+tab1, tab2, tab3 = st.tabs(["🔬 Execution", "📊 Results", "ℹ️ Information"])
 
 with tab1:
     col1, col2 = st.columns([2, 1])
@@ -253,11 +250,11 @@ with tab1:
             st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
     
     with col2:
-        st.markdown("### Analysis Options")
+        st.markdown("### ⚠️ Warning")
         st.markdown("""
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 1rem;">
-            <h4 style="color: white; margin-top: 0;">🎯 Adaptive Analysis</h4>
-            <p style="color: rgba(255,255,255,0.95); margin-bottom: 0;">The system automatically determines which examinations are necessary based on available data.</p>
+            <h4 style="color: white; margin-top: 0;">🎯 AI Models Involved</h4>
+            <p style="color: rgba(255,255,255,0.95); margin-bottom: 0;">This analysis is performed by AI models and should be used at your own discretion; please note that the accuracy of the final report depends entirely on the underlying Large Language Models and the quality of the image provided. </p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -268,16 +265,13 @@ with tab1:
             analyze_button = False
 
 with tab2:
-    # Force refresh when results are available
     if 'results' not in st.session_state or st.session_state.results is None:
         st.info("👈 Upload an image and run analysis to see results here")
     else:
         results = st.session_state.results
         
-        # Debug: Show that we have results
         st.markdown("## 📈 Analysis Results")
         
-        # Confidence Score Display
         col1, col2, col3 = st.columns(3)
         
         confidence_score = int(results.get('confidence_score', 0) * 100)
@@ -311,7 +305,6 @@ with tab2:
             </div>
             """, unsafe_allow_html=True)
         
-        # Final Report
         st.markdown("---")
         final_report_text = results.get('final_report', 'No report available')
         st.markdown("""
@@ -320,14 +313,12 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
         
-        # Display report text in readable format
         st.markdown(f"""
-        <div style="background: white; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #667eea; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="background: black; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #667eea; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             <pre style="white-space: pre-wrap; font-family: 'Segoe UI', sans-serif; color: #2E4057; line-height: 1.6; margin: 0;">{final_report_text}</pre>
         </div>
         """, unsafe_allow_html=True)
         
-        # Detailed Results
         st.markdown("---")
         st.markdown("## 🔍 Detailed Examination Results")
         
@@ -356,7 +347,6 @@ with tab2:
             else:
                 st.success("All planned examinations were executed")
         
-        # Technical Data
         st.markdown("---")
         st.markdown("## 🔧 Technical Data")
         
@@ -381,7 +371,6 @@ with tab2:
             else:
                 st.info("OSINT search not performed")
         
-        # Download Report
         st.markdown("---")
         report_text = results.get('final_report', '')
         st.download_button(
@@ -441,16 +430,13 @@ with tab3:
     **Low Confidence (0-39%)**: Limited or inconclusive evidence
     """)
 
-# Analysis Logic
 if analyze_button:
     with st.spinner("🔄 Running forensic analysis..."):
-        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
             tmp_file.write(uploaded_file.getbuffer())
             tmp_path = tmp_file.name
         
         try:
-            # Progress tracking
             progress_container = st.container()
             
             with progress_container:
@@ -461,7 +447,7 @@ if analyze_button:
                 status_text.text("📋 Initializing forensic graph...")
                 progress_bar.progress(10)
                 
-                # Create and run forensic graph
+                
                 graph = create_forensic_graph()
                 
                 status_text.text("🔍 Extracting metadata...")
@@ -486,7 +472,6 @@ if analyze_button:
                 status_text.text("⚙️ Planning examinations...")
                 progress_bar.progress(50)
                 
-                # Execute graph
                 result = graph.invoke(initial_state)
                 
                 status_text.text("🎯 Calculating confidence...")
@@ -495,7 +480,6 @@ if analyze_button:
                 status_text.text("📝 Generating report...")
                 progress_bar.progress(95)
                 
-                # Store results
                 st.session_state.results = result
                 st.session_state.analysis_complete = True
                 
@@ -503,9 +487,9 @@ if analyze_button:
                 status_text.text("✅ Analysis complete!")
             
             st.success("✅ Analysis completed successfully!")
-            st.balloons()  # Add celebration effect
+            st.balloons()  
             
-            # Show results immediately in expanders
+           
             st.markdown("---")
             st.markdown("## 📊 Quick Results Preview")
             
@@ -533,11 +517,11 @@ if analyze_button:
             st.exception(e)
         
         finally:
-            # Cleanup
+         
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-# Footer
+
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 2rem;">

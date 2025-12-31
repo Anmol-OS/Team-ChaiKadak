@@ -16,9 +16,6 @@ from langchain_core.tools import tool
 
 load_dotenv()
 
-# ============================================================
-# SAFE JSON PARSER
-# ============================================================
 
 def safe_parse_json(raw: str) -> Dict[str, Any] | None:
     if not raw or not raw.strip():
@@ -31,10 +28,6 @@ def safe_parse_json(raw: str) -> Dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
 
-
-# ============================================================
-# TOOLS — PURE, STATELESS DATA EXTRACTION
-# ============================================================
 
 @tool
 def extract_metadata(image_path: str) -> str:
@@ -149,9 +142,6 @@ def google_lens_search(image_path: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-# ============================================================
-# STATE
-# ============================================================
 
 class ForensicState(TypedDict):
     image_path: str
@@ -172,10 +162,6 @@ class ForensicState(TypedDict):
     final_report: str
 
 
-# ============================================================
-# NODES
-# ============================================================
-
 class ForensicNodes:
     def __init__(self):
         self.llm = ChatGroq(
@@ -191,8 +177,6 @@ class ForensicNodes:
         )
 
         self.vis_model = vision_pipe
-
-    # ---------------- METADATA ----------------
 
     def metadata_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
@@ -218,8 +202,6 @@ Write a concise conclusion.
         ).content
 
         return state
-
-    # ---------------- PLANNER ----------------
 
     def planner_node(self, state: ForensicState):
         """
@@ -267,9 +249,7 @@ Write a concise conclusion.
         raw = self.llm.invoke([HumanMessage(content=prompt)],response_format={"type": "json_object"}).content
         decision = safe_parse_json(raw)
 
-        # ---------------- SAFETY CHECKS ----------------
         if not decision or not isinstance(decision, dict):
-            # Deterministic fallback — NEVER empty
             state["planned_run"] = ["visual_environment", "ela"]
             state["skipped_exams"]["osint"] = (
                 "Not required because automated OSINT was unavailable"
@@ -286,16 +266,11 @@ Write a concise conclusion.
         if not isinstance(skip, dict):
             skip = {}
 
-        # ---------------- NORMALIZE EXAMS ----------------
-
         allowed_exams = {"visual_environment", "ela", "osint"}
         run = [exam for exam in run if exam in allowed_exams]
 
-        # Remove duplicates while preserving order
         seen = set()
         run = [x for x in run if not (x in seen or seen.add(x))]
-
-        # ---------------- SANITIZE SKIP REASONS ----------------
 
         clean_skip = {}
 
@@ -315,8 +290,6 @@ Write a concise conclusion.
                 clean_skip[exam] = "Not required because available evidence is sufficient"
             else:
                 clean_skip[exam] = reason.strip()
-
-        # ---------------- FINAL ASSIGNMENT ----------------
         if not run:
             run = ["visual_environment"]
             state["skipped_exams"].setdefault(
@@ -329,8 +302,6 @@ Write a concise conclusion.
 
         return state
 
-
-    # ---------------- VISUAL ----------------
 
     def visual_environment_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
@@ -363,7 +334,6 @@ Highlight only concrete inconsistencies.
 
         return state
 
-    # ---------------- ELA ----------------
 
     def ela_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
@@ -405,7 +375,6 @@ Write a 2–3 sentence forensic conclusion.
 
         return state
 
-    # ---------------- OSINT ----------------
 
     def osint_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
@@ -432,7 +401,6 @@ OSINT data:
 
         return state
 
-    # ---------------- CONFIDENCE ----------------
 
     def confidence_node(self, state: ForensicState):
         """
@@ -449,9 +417,6 @@ OSINT data:
         conclusions = state.get("conclusions", {})
         skipped = state.get("skipped_exams", {})
 
-        # --------------------------------------------------
-        # Determine which exams actually ran
-        # --------------------------------------------------
 
         executed_exams = [
             exam for exam in ["metadata", "visual_environment", "ela", "osint"]
@@ -465,10 +430,6 @@ OSINT data:
                 "No forensic examinations were successfully executed."
             )
             return state
-
-        # --------------------------------------------------
-        # Ask LLM to score ONLY executed exams
-        # --------------------------------------------------
 
         prompt = f"""
     You are a forensic examiner.
@@ -507,9 +468,6 @@ OSINT data:
             )
             return state
 
-        # --------------------------------------------------
-        # Normalize score by coverage (soft penalty)
-        # --------------------------------------------------
 
         raw_score = float(result.get("confidence_score", 0))
         coverage_ratio = len(executed_exams) / 4.0  # metadata + 3 exams
@@ -528,8 +486,6 @@ OSINT data:
 
         return state
 
-
-    # ---------------- REPORT ----------------
 
     def report_node(self, state: ForensicState):
         """

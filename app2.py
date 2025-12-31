@@ -6,9 +6,6 @@ from graph import create_forensic_graph
 from nodes import ForensicState
 import json
 
-# ============================================================
-# PAGE CONFIG & STYLING
-# ============================================================
 st.set_page_config(
     page_title="Forensic Image Analyzer | Team ChaiKadak",
     page_icon="🔍",
@@ -109,33 +106,128 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State
 if 'results' not in st.session_state:
     st.session_state.results = None
 
-# Header
 st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&family=Inter:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+    .main-header {
+        position: relative;
+        background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 50%, #fdbb2d 100%);
+        background-size: 400% 400%;
+        animation: gradientAnimation 15s ease infinite;
+        padding: 3.5rem 2rem;
+        border-radius: 20px;
+        margin-bottom: 2.5rem;
+        color: white;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        overflow: hidden;
+    }
+
+    @keyframes gradientAnimation {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    .header-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.15);
+        backdrop-filter: blur(4px);
+        z-index: 1;
+    }
+
+    .header-content {
+        position: relative;
+        z-index: 2;
+    }
+
+    .main-header h1 {
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 900;
+        font-size: 4rem;
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: -2px;
+        line-height: 1;
+        background: linear-gradient(to bottom, #ffffff 60%, #e0e0e0 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0 5px 15px rgba(0,0,0,0.4));
+    }
+
+    .main-header p {
+        font-family: 'Inter', sans-serif;
+        font-size: 1.2rem;
+        opacity: 0.9;
+        font-weight: 400;
+        max-width: 700px;
+        margin: 15px auto 0;
+        letter-spacing: 0.5px;
+    }
+    
+    .header-scan-line {
+        position: absolute;
+        width: 100%;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.2);
+        top: 0;
+        left: 0;
+        animation: scan 5s linear infinite;
+        z-index: 2;
+    }
+
+    @keyframes scan {
+        0% { top: 0%; opacity: 0; }
+        50% { opacity: 1; }
+        100% { top: 100%; opacity: 0; }
+    }
+</style>
+
 <div class="main-header">
-    <div class="team-badge">BY TEAM CHAIKADAK</div>
-    <h1>🔍 Forensic Image Analyzer</h1>
-    <p>AI Orchestration for Authentic Image Verification</p>
+    <div class="header-overlay"></div>
+    <div class="header-scan-line"></div>
+    <div class="header-content">
+        <h1>Forensic Image Analyzer</h1>
+        <p>Advanced AI Orchestration for Digital Authenticity & Tamper Detection</p>
+    </div>
 </div>
 """, unsafe_allow_html=True)
-
-# Sidebar
 with st.sidebar:
+    st.markdown("""
+        <style>
+            .sidebar-team-header {
+                text-align: center;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 1.1rem;
+                font-weight: 700;
+                color: #A9A9A9;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                margin: 0;
+                padding: 10px 0;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="sidebar-team-header">Team ChaiKadak</div>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
     st.markdown("### 📋 System Status")
     st.success("Core Engine: Active")
-    st.info("Analysis Tier: Paid (Llama 4 Scout)")
+    st.info("⚠️ This analysis is performed by AI models and should be used at your own discretion")
+    
     st.markdown("---")
     if st.button("🗑️ Reset Workspace"):
         st.session_state.results = None
         st.rerun()
-    st.caption("Developed by Team ChaiKadak")
 
-# ============================================================
-# ANALYSIS CONSOLE
-# ============================================================
+        
 st.markdown("### 🔬 Input Selection")
 col_up, col_preview = st.columns([2, 1])
 
@@ -149,11 +241,8 @@ with col_preview:
     else:
         analyze_button = False
 
-# ============================================================
-# EXECUTION LOGIC
-# ============================================================
 if analyze_button and uploaded_file:
-    with st.spinner("🕵️ Orchestrating forensic agents..."):
+    with st.spinner("🕵️ Orchestrating forensic agent..."):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
             tmp_file.write(uploaded_file.getbuffer())
             tmp_path = tmp_file.name
@@ -185,9 +274,6 @@ if analyze_button and uploaded_file:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-# ============================================================
-# RESULTS TABS
-# ============================================================
 tab1, tab2, tab3 = st.tabs(["📊 Verification Results", "🔍 Audit Logs", "ℹ️ Methodology & Calculation"])
 
 with tab1:
@@ -197,7 +283,7 @@ with tab1:
         label = res.get("confidence_label", "Unknown")
         count = len(res.get('conclusions', {}))
 
-        # Metrics Row
+
         st.markdown(f"""
         <div class="metric-container">
             <div class="metric-card">
@@ -216,8 +302,11 @@ with tab1:
         """, unsafe_allow_html=True)
         
         st.markdown('<div class="conclusion-header"><h3>📋 Final Expert Conclusion</h3></div>', unsafe_allow_html=True)
-        # Using a div with the report-content class ensures text wraps properly
-        st.markdown(f'<div class="report-content">{res.get("final_report", "No report generated.")}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background: black; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #667eea; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <pre style="white-space: pre-wrap; font-family: 'Segoe UI', sans-serif; color: #000000; line-height: 1.6; margin: 0;">{res.get('final_report', 'No report generated.')}</pre>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.info("Awaiting input. Please upload an image and execute the pipeline.")
 
@@ -228,7 +317,6 @@ with tab2:
         with c1:
             st.subheader("✅ Conclusion Details")
             for node, conclusion in res.get('conclusions', {}).items():
-                # HEADER UPDATE: Renamed ELA
                 header_name = "Error Level Analysis (ELA)" if node == "ela" else node.replace('_', ' ').title()
                 with st.expander(f"Result: {header_name}", expanded=True):
                     st.write(conclusion)
@@ -249,13 +337,68 @@ with tab3:
     st.write("The system utilizes a StateGraph to manage a multi-step forensic audit. An initial 'Planner' agent evaluates the extracted metadata to determine which specific forensic nodes—such as Error Level Analysis (ELA) or OSINT—are necessary.")
 
     st.markdown("### 2. Forensic Node Methodology")
-    st.markdown(f"""
-    <div class="methodology-box">
-    <b>Metadata Audit:</b> Extracts embedded EXIF and GPS tags to find software modification signatures or device inconsistencies.<br><br>
-    <b>Error Level Analysis (ELA):</b> Identifies image manipulation by detecting differences in JPEG compression levels throughout the image. Localized inconsistencies often point to added or retouched elements.<br><br>
-    <b>Visual Environment:</b> Uses vision-language models to verify if the visual scene matches the provided metadata context.
+    st.markdown("""
+<style>
+    .methodology-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    .method-card {
+        background: #ffffff;
+        border: 1px solid #e0e6ed;
+        border-left: 5px solid #048A81;
+        padding: 1.5rem;
+        border-radius: 8px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .method-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+    }
+
+    .method-title {
+        color: #2E4057;
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-bottom: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .method-text {
+        color: #4A5568;
+        font-size: 0.95rem;
+        line-height: 1.6;
+        margin: 0;
+    }
+
+    .method-icon {
+        font-size: 1.3rem;
+    }
+</style>
+
+<div class="methodology-grid">
+    <div class="method-card">
+        <div class="method-title"><span class="method-icon">🏷️</span> Metadata Audit</div>
+        <p class="method-text">Extracts embedded <b>EXIF and GPS tags</b> to identify software modification signatures or device inconsistencies. It cross-references hardware profiles to detect spoofed origins.</p>
     </div>
-    """, unsafe_allow_html=True)
+    <div class="method-card" style="border-left-color: #667eea;">
+        <div class="method-title"><span class="method-icon">📉</span> Error Level Analysis</div>
+        <p class="method-text">Identifies manipulation by detecting <b>JPEG compression variances</b>. Localized inconsistencies in the error level often pinpoint added, removed, or retouched visual elements.</p>
+    </div>
+    <div class="method-card" style="border-left-color: #fdbb2d;">
+        <div class="method-title"><span class="method-icon">👁️</span> Visual Environment</div>
+        <p class="method-text">Leverages <b>Vision-Language Models</b> to verify semantic consistency. It ensures the visual scene (lighting, weather, objects) logically matches the recorded metadata context.</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
     st.markdown("### 3. Confidence Scoring Formula")
     st.write("The Confidence Score is a weighted metric derived from the strength of findings and the coverage of the audit:")
@@ -263,7 +406,8 @@ with tab3:
 
     st.markdown("---")
     st.markdown("### 🍵 About Team ChaiKadak")
-    st.write("Team ChaiKadak develops robust AI solutions focused on transparency and forensic integrity.")
+    st.write("""- **Anmol Bhatnagar**  Enrollment: 992401040039  
+- **Dhruv Arora**  Enrollment: 992401040023  """)
 
 st.markdown("---")
 st.caption("Forensic Image Analyzer v2.0 | Team ChaiKadak")
