@@ -10,7 +10,7 @@ _For the CodeFusion Hackathon (hosted by Google Developers Group on Campus JIIT-
 - **Anmol Bhatnagar**  
   Enrollment: 992401040039  
 - **Dhruv Arora**  
-  Enrollment: 992401040025  
+  Enrollment: 992401040023  
 
 ---
 
