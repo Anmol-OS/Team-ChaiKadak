@@ -1,0 +1,16 @@
+streamlit
+langgraph
+langchain-core
+langchain-groq
+langchain-huggingface
+transformers
+accelerate
+torch
+pillow
+opencv-python-headless
+numpy
+exifread
+requests
+python-dotenv
+hf_xet
+torchvision
