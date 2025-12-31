@@ -318,7 +318,7 @@ with tab2:
             st.subheader("✅ Conclusion Details")
             for node, conclusion in res.get('conclusions', {}).items():
                 header_name = "Error Level Analysis (ELA)" if node == "ela" else node.replace('_', ' ').title()
-                with st.expander(f"Result: {header_name}", expanded=True):
+                with st.expander(f"{header_name}", expanded=True):
                     st.write(conclusion)
         with c2:
             st.subheader("⏭️ Process Optimization")
@@ -334,8 +334,15 @@ with tab3:
     st.markdown("## 🧠 How the Analysis is Calculated")
     
     st.markdown("### 1. Orchestration & Planning")
-    st.write("The system utilizes a StateGraph to manage a multi-step forensic audit. An initial 'Planner' agent evaluates the extracted metadata to determine which specific forensic nodes—such as Error Level Analysis (ELA) or OSINT—are necessary.")
+    st.write("The system utilizes a **StateGraph** to manage a multi-step forensic audit. An initial **'Planner'** agent evaluates the extracted metadata to determine which specific forensic nodes—such as Error Level Analysis (ELA) or OSINT—are necessary.")
 
+    st.markdown("""
+    * **Dynamic Investigation Scoping**: The Planner analyzes metadata to populate a `planned_run` queue, identifying only the examinations required to reach a high-confidence conclusion while skipping redundant steps.
+    * **State-Persistent Orchestration**: A central `ForensicState` object tracks all visual descriptions, technical metadata, and individual node conclusions to maintain data integrity throughout the audit.
+    * **Deterministic Routing**: The orchestrator follows 'Hard Invariants' where the routing space strictly shrinks after each node is executed, preventing infinite loops and ensuring a final report is always generated.
+    * **Adaptive Fail-Safes**: If the Planner cannot reach a deterministic decision, the system defaults to a baseline verification (e.g., Visual Environment) to ensure forensic coverage is never compromised.
+    """)
+    
     st.markdown("### 2. Forensic Node Methodology")
     st.markdown("""
 <style>
