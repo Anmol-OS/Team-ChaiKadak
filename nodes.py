@@ -4,12 +4,16 @@ import cv2
 import numpy as np
 import exifread
 import requests
+import torch
+import re
 from typing import TypedDict, List, Dict, Any
 from dotenv import load_dotenv
 from PIL import Image
 
-from transformers import pipeline
-from langchain_huggingface import HuggingFacePipeline
+# --- IMPORTS FOR BLIP LOCAL EXECUTION ---
+from transformers import BlipProcessor, BlipForConditionalGeneration
+
+# --- LANGCHAIN IMPORTS ---
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.tools import tool
@@ -18,10 +22,22 @@ load_dotenv()
 
 
 def safe_parse_json(raw: str) -> Dict[str, Any] | None:
+    """
+    Robustly extracts and parses JSON from a string, handling 
+    markdown code blocks and conversational filler.
+    """
     if not raw or not raw.strip():
         return None
 
-    raw = raw.replace("```json", "").replace("```", "").strip()
+    # 1. Try to find the JSON object boundaries
+    start_index = raw.find('{')
+    end_index = raw.rfind('}')
+
+    if start_index != -1 and end_index != -1 and end_index > start_index:
+        raw = raw[start_index : end_index + 1]
+    else:
+        # Fallback cleanup if braces aren't found (rare)
+        raw = raw.replace("```json", "").replace("```", "").strip()
 
     try:
         return json.loads(raw)
@@ -29,17 +45,33 @@ def safe_parse_json(raw: str) -> Dict[str, Any] | None:
         return None
 
 
+def upload_to_tmpfiles(image_path: str) -> str | None:
+    """
+    Uploads an image to TmpFiles.org (temporary hosting) to get a public URL.
+    Returns the direct download URL required for APIs.
+    """
+    url = "https://tmpfiles.org/api/v1/upload"
+    
+    try:
+        with open(image_path, 'rb') as f:
+            files = {'file': f}
+            response = requests.post(url, files=files, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            raw_url = data.get('data', {}).get('url')
+            
+            if raw_url:
+                # Convert the view URL to a direct download URL
+                return raw_url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+        return None
+    except Exception as e:
+        return None
+
+
 @tool
 def extract_metadata(image_path: str) -> str:
-    """
-    Extracts available EXIF and GPS metadata from an image.
-
-    Returns JSON string with:
-    - device
-    - software
-    - timestamp
-    - gps (lat, lon) if available
-    """
+    """Extracts available EXIF and GPS metadata from an image."""
     try:
         with open(image_path, "rb") as f:
             tags = exifread.process_file(f, details=False)
@@ -85,10 +117,9 @@ def extract_metadata(image_path: str) -> str:
 
 @tool
 def run_ela_analysis(image_path: str) -> str:
-    """
-    Performs Error Level Analysis (ELA) and returns deviation statistics.
-    """
-    tmp = f"ela_{os.getpid()}.jpg"
+    """Performs Error Level Analysis (ELA) and returns deviation statistics."""
+    pid = os.getpid()
+    tmp = f"ela_{pid}.jpg"
     try:
         img = cv2.imread(image_path)
         if img is None:
@@ -116,46 +147,56 @@ def run_ela_analysis(image_path: str) -> str:
 
 @tool
 def google_lens_search(image_path: str) -> str:
-    """
-    Performs reverse image search using SerpAPI (Google Lens).
-    """
+    """Performs reverse image search using SerpAPI (Google Lens)."""
     key = os.getenv("SERPAPI_KEY")
     if not key:
         return json.dumps({"skipped": "SERPAPI_KEY missing"})
 
+    public_url = upload_to_tmpfiles(image_path)
+    
+    if not public_url:
+        return json.dumps({
+            "skipped": "Temporary image hosting failed", 
+            "details": "Could not upload to TmpFiles. Check internet connection."
+        })
+
     try:
-        with open(image_path, "rb") as f:
-            r = requests.post(
-                "https://serpapi.com/search",
-                params={"engine": "google_lens", "api_key": key},
-                files={"encoded_image": f},
-                timeout=30
-            )
+        params = {
+            "engine": "google_lens",
+            "api_key": key,
+            "url": public_url
+        }
+        
+        # Using .json endpoint to match specific API behavior
+        r = requests.get("https://serpapi.com/search.json", params=params, timeout=30)
+
+        if r.status_code != 200:
+            return json.dumps({
+                "error": f"SerpApi Failed: {r.status_code}", 
+                "details": r.text[:200]
+            })
 
         data = r.json()
         return json.dumps({
             "visual_matches": data.get("visual_matches", [])[:5],
-            "pages": data.get("pages_with_matching_images", [])[:5]
+            "pages": data.get("pages_with_matching_images", [])[:5],
+            "knowledge_graph": data.get("knowledge_graph", [])
         })
 
     except Exception as e:
-        return json.dumps({"error": str(e)})
-
+        return json.dumps({"error": f"Search execution failed: {str(e)}"})
 
 
 class ForensicState(TypedDict):
     image_path: str
     messages: List[BaseMessage]
-
     visual_description: str
     metadata: Dict[str, Any]
     ela: Dict[str, Any]
     osint: Dict[str, Any]
-
     conclusions: Dict[str, str]
     skipped_exams: Dict[str, str]
     planned_run: List[str]
-
     confidence_label: str
     confidence_score: float
     confidence_reasoning: str
@@ -164,19 +205,26 @@ class ForensicState(TypedDict):
 
 class ForensicNodes:
     def __init__(self):
+        # 1. Main Logic LLM (ChatGroq)
         self.llm = ChatGroq(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             groq_api_key=os.getenv("GROQ_API_KEY"),
             temperature=0.0
         )
 
-        vision_pipe = pipeline(
-            task="image-to-text",
-            model="Salesforce/blip-image-captioning-base",
-            device_map="auto"
-        )
-
-        self.vis_model = vision_pipe
+        # 2. Initialize Salesforce BLIP Image Captioning (Local Execution)
+        self.vis_model_id = "Salesforce/blip-image-captioning-base"
+        
+        print(f"⏳ Loading Vision Model: {self.vis_model_id}...")
+        
+        try:
+            self.vis_processor = BlipProcessor.from_pretrained(self.vis_model_id)
+            self.vis_model = BlipForConditionalGeneration.from_pretrained(self.vis_model_id)
+            print("✅ Vision Model Loaded Successfully.")
+        except Exception as e:
+            print(f"❌ Failed to load Vision Model: {e}")
+            self.vis_model = None
+            self.vis_processor = None
 
     def metadata_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
@@ -187,362 +235,180 @@ class ForensicNodes:
 
         prompt = f"""
 You are a forensic image examiner.
-
-Metadata:
-{json.dumps(state["metadata"], indent=2)}
-
-Rules:
-- Analyze only present fields
-- Missing data is NOT suspicious
-
+Metadata: {json.dumps(state["metadata"], indent=2)}
+Rules: Analyze only present fields. Missing data is NOT suspicious.
 Write a concise conclusion.
 """
         state["conclusions"]["metadata"] = self.llm.invoke(
             [HumanMessage(content=prompt)]
         ).content
-
         return state
 
     def planner_node(self, state: ForensicState):
-        """
-        Decide which forensic examinations should be run.
-
-        Planner rules:
-        - Planner NEVER claims execution
-        - Planner only decides necessity
-        - Output must be audit-safe and deterministic
-        """
-
         state.setdefault("planned_run", [])
         state.setdefault("skipped_exams", {})
         state.setdefault("conclusions", {})
 
         metadata_conclusion = state["conclusions"].get("metadata", "")
-
         prompt = f"""
     You are a forensic examination controller.
-
-    Available examinations:
-    - visual_environment
-    - ela
-    - osint
-
-    Metadata conclusion:
-    {metadata_conclusion}
-
-    Rules:
-    - Decide which examinations are NECESSARY
-    - You may skip an exam ONLY if it adds no value
-    - DO NOT claim any exam was already performed
-    - DO NOT speculate
-    - Skip reasons MUST start with: "Not required because ..."
-
-    Return JSON ONLY in this format:
-    {{
-    "run": ["visual_environment", "ela"],
-    "skip": {{
-        "osint": "Not required because metadata and visual evidence are sufficient"
-    }}
-    }}
+    Metadata conclusion: {metadata_conclusion}
+    Decide NECESSARY exams (visual_environment, ela, osint).
+    Return JSON ONLY: {{ "run": [...], "skip": {{...}} }}
     """
-
-        raw = self.llm.invoke([HumanMessage(content=prompt)],response_format={"type": "json_object"}).content
+        raw = self.llm.invoke([HumanMessage(content=prompt)]).content
         decision = safe_parse_json(raw)
 
         if not decision or not isinstance(decision, dict):
-            state["planned_run"] = ["visual_environment", "ela"]
-            state["skipped_exams"]["osint"] = (
-                "Not required because automated OSINT was unavailable"
-            )
+            state["planned_run"] = ["visual_environment", "ela", "osint"]
             return state
-
 
         run = decision.get("run", [])
         skip = decision.get("skip", {})
+        if not isinstance(run, list): run = []
+        if not isinstance(skip, dict): skip = {}
 
-        if not isinstance(run, list):
-            run = []
-
-        if not isinstance(skip, dict):
-            skip = {}
-
-        allowed_exams = {"visual_environment", "ela", "osint"}
-        run = [exam for exam in run if exam in allowed_exams]
-
-        seen = set()
-        run = [x for x in run if not (x in seen or seen.add(x))]
-
-        clean_skip = {}
-
-        for exam, reason in skip.items():
-            if exam not in allowed_exams:
-                continue
-
-            if not isinstance(reason, str) or not reason.strip():
-                clean_skip[exam] = "Not required because available evidence is sufficient"
-                continue
-
-            lowered = reason.lower()
-
-            if any(word in lowered for word in ["already", "performed", "executed", "done"]):
-                clean_skip[exam] = "Not required because available evidence is sufficient"
-            elif not lowered.startswith("not required because"):
-                clean_skip[exam] = "Not required because available evidence is sufficient"
-            else:
-                clean_skip[exam] = reason.strip()
-        if not run:
-            run = ["visual_environment"]
-            state["skipped_exams"].setdefault(
-                "planner",
-                "Not required because metadata alone was insufficient"
-            )
-
-        state["planned_run"] = run
+        allowed = {"visual_environment", "ela", "osint"}
+        run = [x for x in run if x in allowed]
+        
+        clean_skip = {k: str(v) for k, v in skip.items() if k in allowed}
+        
+        if not run: run = ["visual_environment", "osint"]
+        
+        state["planned_run"] = list(set(run))
         state["skipped_exams"].update(clean_skip)
-
         return state
-
 
     def visual_environment_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
         state.setdefault("skipped_exams", {})
 
-        try:
-            image = Image.open(state["image_path"]).convert("RGB")
-            result = self.vis_model(image)[0]
-            state["visual_description"] = result.get("generated_text", "").strip()
+        if not self.vis_model:
+            state["skipped_exams"]["visual_environment"] = "Vision Model failed to load (Hardware/VRAM issue)."
+            return state
 
+        try:
+            # Load Image locally
+            image = Image.open(state["image_path"]).convert("RGB")
+            
+            # --- BLIP EXECUTION ---
+            # Unconditional image captioning
+            inputs = self.vis_processor(image, return_tensors="pt")
+            
+            # Generate output
+            out = self.vis_model.generate(**inputs, max_new_tokens=50)
+            
+            # Decode output
+            description = self.vis_processor.decode(out[0], skip_special_tokens=True)
+            
+            state["visual_description"] = description.strip()
+
+            # Cross-reference with LLM (Groq)
             prompt = f"""
-Visual description:
+Visual description (Generated by Salesforce/blip-image-captioning-base):
 {state["visual_description"]}
 
 Metadata:
 {json.dumps(state["metadata"], indent=2)}
 
-Highlight only concrete inconsistencies.
+Does the visual content logically match the metadata? (e.g. time of day, location type).
 """
             state["conclusions"]["visual_environment"] = self.llm.invoke(
                 [HumanMessage(content=prompt)]
             ).content
 
         except Exception as e:
-            state["skipped_exams"]["visual_environment"] = f"Vision model failed: {e}"
-
-        finally:
-            if "visual_environment" in state["planned_run"]:
-                state["planned_run"].remove("visual_environment")
+            state["skipped_exams"]["visual_environment"] = f"BLIP generation failed: {e}"
 
         return state
-
 
     def ela_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
-        state.setdefault("skipped_exams", {})
-
         try:
             raw = run_ela_analysis.invoke({"image_path": state["image_path"]})
             state["ela"] = safe_parse_json(raw) or {}
-
-            prompt = f"""
-You are a forensic image examiner.
-
-ELA (Error Level Analysis) measures compression inconsistencies.
-It does NOT prove authenticity or manipulation by itself.
-
-ELA results:
-{json.dumps(state["ela"], indent=2)}
-
-Rules:
-- Do NOT explain statistics
-- Do NOT discuss unrelated meanings of ELA
-- Interpret ONLY in the context of image tampering
-- LOW risk means no strong ELA-based evidence of manipulation
-
-Write a 2–3 sentence forensic conclusion.
-
-
-"""
-            state["conclusions"]["ela"] = self.llm.invoke(
-                [HumanMessage(content=prompt)]
-            ).content
-
+            prompt = f"ELA Results: {json.dumps(state['ela'], indent=2)}\nInterpret for tampering."
+            state["conclusions"]["ela"] = self.llm.invoke([HumanMessage(content=prompt)]).content
         except Exception as e:
             state["skipped_exams"]["ela"] = str(e)
-
-        finally:
-            if "ela" in state["planned_run"]:
-                state["planned_run"].remove("ela")
-
         return state
-
 
     def osint_node(self, state: ForensicState):
         state.setdefault("conclusions", {})
-        state.setdefault("skipped_exams", {})
+        ground_truth = state.get("visual_description", "No visual description available.")
 
         try:
             raw = google_lens_search.invoke({"image_path": state["image_path"]})
             state["osint"] = safe_parse_json(raw) or {}
 
             prompt = f"""
-OSINT data:
-{json.dumps(state["osint"], indent=2)}
-"""
+    You are a skeptical forensic investigator analyzing Reverse Image Search results.
+    
+    1. THE EVIDENCE (Uploaded Image Content):
+    "{ground_truth}"
+
+    2. THE SEARCH RESULTS:
+    {json.dumps(state["osint"], indent=2)}
+
+    CRITICAL INSTRUCTION:
+    - Google Lens returns visual matches (style/color) that are NOT the same image.
+    - Check 'pages_with_matching_images' for exact duplicates.
+    - Compare visual_matches strictly against 'THE EVIDENCE'. If subjects differ, dismiss them.
+    
+    Write a conclusion distinguishing exact matches from false positives.
+    """
             state["conclusions"]["osint"] = self.llm.invoke(
                 [HumanMessage(content=prompt)]
             ).content
-
         except Exception as e:
             state["skipped_exams"]["osint"] = str(e)
-
-        finally:
-            if "osint" in state["planned_run"]:
-                state["planned_run"].remove("osint")
-
         return state
 
-
     def confidence_node(self, state: ForensicState):
-        """
-        Compute forensic confidence based ONLY on executed examinations.
-
-        Rules:
-        - At least one exam must have run
-        - Skipped exams do NOT invalidate confidence
-        - Confidence score reflects both:
-            (a) strength of conclusions
-            (b) coverage (how many exams ran)
-        """
-
         conclusions = state.get("conclusions", {})
-        skipped = state.get("skipped_exams", {})
+        executed = list(conclusions.keys())
 
-
-        executed_exams = [
-            exam for exam in ["metadata", "visual_environment", "ela", "osint"]
-            if exam in conclusions
-        ]
-
-        if len(executed_exams) == 0:
+        if not executed:
             state["confidence_label"] = "Inconclusive"
             state["confidence_score"] = 0.0
-            state["confidence_reasoning"] = (
-                "No forensic examinations were successfully executed."
-            )
             return state
 
+        # STRICTER PROMPT to ensure cleaner JSON output
         prompt = f"""
-    You are a forensic examiner.
-
-    Executed examinations:
-    {executed_exams}
-
-    Their conclusions:
-    {json.dumps({k: conclusions[k] for k in executed_exams}, indent=2)}
-
-    Rules:
-    - Evaluate confidence ONLY from the executed examinations
-    - Skipped exams do NOT imply failure
-    - Fewer exams means lower coverage, not invalidity
-    - Assign confidence_label from:
-    High Confidence | Medium Confidence | Low Confidence
-    - Assign confidence_score from 0–100
-    - Explicitly state that the score is based ONLY on executed exams
-
-    Return JSON only:
+    Exams run: {executed}
+    Conclusions: {json.dumps(conclusions, indent=2)}
+    
+    TASK:
+    Evaluate the consistency of the findings to determine a confidence score (0-100) and security label.
+    
+    OUTPUT FORMAT (STRICT JSON ONLY, NO TEXT BEFORE OR AFTER):
     {{
-    "confidence_label": "...",
-    "confidence_score": 0-100,
-    "reasoning": "brief explanation"
+        "confidence_label": "High",  
+        "confidence_score": 95,
+        "reasoning": "Metadata matches visual content and OSINT confirms location."
     }}
     """
-
         raw = self.llm.invoke([HumanMessage(content=prompt)]).content
         result = safe_parse_json(raw)
 
-        if not result:
-            state["confidence_label"] = "Low Confidence"
-            state["confidence_score"] = 0.3
-            state["confidence_reasoning"] = (
-                "Confidence derived from limited executed examinations only."
-            )
-            return state
-
-
-        raw_score = float(result.get("confidence_score", 0))
-        coverage_ratio = len(executed_exams) / 4.0  # metadata + 3 exams
-
-        adjusted_score = raw_score * coverage_ratio
-
-        state["confidence_label"] = result.get("confidence_label", "Low Confidence")
-        state["confidence_score"] = round(adjusted_score / 100.0, 2)
-
-        state["confidence_reasoning"] = (
-            result.get("reasoning", "").strip()
-            + f"\n\nNote: Confidence is based only on the following executed examinations: "
-            + ", ".join(executed_exams)
-            + "."
-        )
-
+        if result:
+            state["confidence_label"] = result.get("confidence_label", "Low")
+            try:
+                # Handle cases where score might be a string "95" or int 95
+                score = float(result.get("confidence_score", 0))
+                state["confidence_score"] = score / 100.0 if score > 1.0 else score
+            except (ValueError, TypeError):
+                 state["confidence_score"] = 0.0
+            
+            state["confidence_reasoning"] = result.get("reasoning", "")
+        else:
+            state["confidence_label"] = "Error"
+            state["confidence_score"] = 0.0
+            state["confidence_reasoning"] = "System failed to parse confidence score from LLM."
         return state
-
 
     def report_node(self, state: ForensicState):
-        """
-        Generate a final forensic report with a single synthesized conclusion.
-
-        Rules:
-        - Synthesize ONLY from existing conclusions
-        - Do NOT introduce new facts
-        - Explicitly state scope limitations
-        """
-
         conclusions = state.get("conclusions", {})
-        skipped = state.get("skipped_exams", {})
-
-        if not conclusions:
-            state["final_report"] = (
-                "FORENSIC IMAGE AUTHENTICITY REPORT\n\n"
-                "No forensic examinations were successfully executed. "
-                "No conclusion can be drawn."
-            )
-            return state
-
-        prompt = f"""
-    You are a forensic image examiner writing the FINAL CONCLUSION section
-    of a forensic report.
-
-    Individual examination conclusions:
-    {json.dumps(conclusions, indent=2)}
-
-    Skipped examinations:
-    {json.dumps(skipped, indent=2)}
-
-    Rules:
-    - Write ONE coherent expert conclusion in plain English
-    - Base the conclusion ONLY on the provided examination conclusions
-    - Do NOT introduce new evidence or speculation
-    - Acknowledge limitations due to skipped examinations
-    - Do NOT list exams separately
-    - Do NOT repeat text verbatim
-    - Length: 4–6 sentences
-
-    Write only the final conclusion text.
-    """
-
-        final_conclusion = self.llm.invoke(
-            [HumanMessage(content=prompt)]
-        ).content.strip()
-
-        state["final_report"] = f"""
-    FORENSIC IMAGE AUTHENTICITY REPORT
-
-    Confidence Level: {state.get("confidence_label")}
-    Confidence Score: {int(state.get("confidence_score", 0) * 100)}%
-
-    Final Expert Conclusion:
-    {final_conclusion}
-    """
-
+        prompt = f"Summarize findings into final report (4-5 sentences):\n{json.dumps(conclusions, indent=2)}"
+        state["final_report"] = self.llm.invoke([HumanMessage(content=prompt)]).content
         return state
-
