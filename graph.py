@@ -7,16 +7,27 @@ def route_next_exam(state: ForensicState) -> str:
 
     HARD INVARIANT:
     - If planned_run is empty -> go to confidence
+    - Priority is determined by the order of checks below.
     """
     planned = state.get("planned_run", [])
 
     if not planned:
         return "confidence"
 
+    if "strings_audit" in planned:
+        return "strings_audit"
     if "visual_environment" in planned:
         return "visual_environment"
     if "ela" in planned:
         return "ela"
+    if "noise_analysis" in planned:
+        return "noise_analysis"
+    if "clone_detection" in planned:
+        return "clone_detection"
+    if "pca_analysis" in planned:
+        return "pca_analysis"
+    if "luminance_check" in planned:
+        return "luminance_check"
     if "osint" in planned:
         return "osint"
 
@@ -62,14 +73,18 @@ def create_forensic_graph():
 
     graph.add_node("metadata", engine.metadata_node)
     graph.add_node("planner", engine.planner_node)
+    graph.add_node("exam_router", exam_router)
+    graph.add_node("confidence", engine.confidence_node)
+    graph.add_node("report", engine.report_node)
     
     graph.add_node("visual_environment", engine.visual_environment_node)
     graph.add_node("ela", engine.ela_node)
     graph.add_node("osint", engine.osint_node)
-    
-    graph.add_node("exam_router", exam_router)
-    graph.add_node("confidence", engine.confidence_node)
-    graph.add_node("report", engine.report_node)
+    graph.add_node("noise_analysis", engine.noise_analysis_node)
+    graph.add_node("strings_audit", engine.strings_audit_node)
+    graph.add_node("pca_analysis", engine.pca_node)
+    graph.add_node("luminance_check", engine.luminance_node)
+    graph.add_node("clone_detection", engine.clone_node)
 
     graph.add_edge(START, "metadata")
     graph.add_edge("metadata", "planner")
@@ -81,6 +96,11 @@ def create_forensic_graph():
             "visual_environment": "visual_environment",
             "ela": "ela",
             "osint": "osint",
+            "noise_analysis": "noise_analysis",
+            "strings_audit": "strings_audit",
+            "pca_analysis": "pca_analysis",
+            "luminance_check": "luminance_check",
+            "clone_detection": "clone_detection",
             "confidence": "confidence",
         },
     )
@@ -88,6 +108,11 @@ def create_forensic_graph():
     graph.add_edge("visual_environment", "exam_router")
     graph.add_edge("ela", "exam_router")
     graph.add_edge("osint", "exam_router")
+    graph.add_edge("noise_analysis", "exam_router")
+    graph.add_edge("strings_audit", "exam_router")
+    graph.add_edge("pca_analysis", "exam_router")
+    graph.add_edge("luminance_check", "exam_router")
+    graph.add_edge("clone_detection", "exam_router")
 
     graph.add_conditional_edges(
         "exam_router",
@@ -96,6 +121,11 @@ def create_forensic_graph():
             "visual_environment": "visual_environment",
             "ela": "ela",
             "osint": "osint",
+            "noise_analysis": "noise_analysis",
+            "strings_audit": "strings_audit",
+            "pca_analysis": "pca_analysis",
+            "luminance_check": "luminance_check",
+            "clone_detection": "clone_detection",
             "confidence": "confidence",
         },
     )

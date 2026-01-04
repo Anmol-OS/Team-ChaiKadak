@@ -30,16 +30,6 @@ st.markdown("""
         position: relative;
     }
 
-    .team-badge {
-        position: absolute;
-        top: 10px;
-        right: 20px;
-        font-size: 0.8rem;
-        opacity: 0.8;
-        letter-spacing: 1px;
-    }
-
-    /* Perfectly aligned Flexbox metrics */
     .metric-container {
         display: flex;
         justify-content: space-between;
@@ -215,19 +205,15 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-team-header">Team ChaiKadak</div>', unsafe_allow_html=True)
-    
     st.markdown("---")
-    
     st.markdown("### 📋 System Status")
     st.success("Core Engine: Active")
     st.info("⚠️ This analysis is performed by AI models and should be used at your own discretion")
-    
     st.markdown("---")
     if st.button("🗑️ Reset Workspace"):
         st.session_state.results = None
         st.rerun()
 
-        
 st.markdown("### 🔬 Input Selection")
 col_up, col_preview = st.columns([2, 1])
 
@@ -242,37 +228,100 @@ with col_preview:
         analyze_button = False
 
 if analyze_button and uploaded_file:
-    with st.spinner("🕵️ Orchestrating forensic agent..."):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
-            tmp_file.write(uploaded_file.getbuffer())
-            tmp_path = tmp_file.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
+        tmp_file.write(uploaded_file.getbuffer())
+        tmp_path = tmp_file.name
+    
+    try:
+        graph = create_forensic_graph()
+        initial_state = ForensicState(
+            image_path=tmp_path,
+            messages=[],
+            visual_description="",
+            metadata={},
+            ela={},
+            osint={},
+            noise_analysis={},
+            strings_audit={},
+            pca_analysis={},
+            luminance_check={},
+            clone_detection={},
+            conclusions={},
+            skipped_exams={},
+            planned_run=[],
+            confidence_label="",
+            confidence_score=0.0,
+            confidence_reasoning="",
+            final_report=""
+        )
+
+        thought_placeholder = st.empty()
         
-        try:
-            graph = create_forensic_graph()
-            initial_state = ForensicState(
-                image_path=tmp_path,
-                messages=[],
-                visual_description="",
-                metadata={},
-                ela={},
-                osint={},
-                conclusions={},
-                skipped_exams={},
-                planned_run=[],
-                confidence_label="",
-                confidence_score=0.0,
-                confidence_reasoning="",
-                final_report=""
-            )
-            
-            st.session_state.results = graph.invoke(initial_state)
-            st.rerun() 
-            
-        except Exception as e:
-            st.error(f"Analysis Pipeline Error: {e}")
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+        final_state = initial_state.copy()
+
+        for chunk in graph.stream(initial_state, stream_mode="updates"):
+            for node_name, update in chunk.items():
+                final_state.update(update)
+                
+                if node_name == "metadata":
+                    thought_msg = "🔍 **Metadata Node**: Extracted EXIF data. Checking for hardware/software inconsistencies..."
+                elif node_name == "planner":
+                    plan = update.get("planned_run", [])
+                    thought_msg = f"🧠 **Planner Node**: Analysis strategy formulated. Queued exams: {plan}..."
+                elif node_name == "visual_environment":
+                    thought_msg = "👁️ **Vision Node**: VLM is scanning the visual scene for semantic context..."
+                elif node_name == "ela":
+                    thought_msg = "📉 **Forensic Lab**: Calculating Error Level Analysis (ELA) to detect compression artifacts..."
+                elif node_name == "noise_analysis":
+                    thought_msg = "🌫️ **Noise Analyzer**: Extracting high-frequency noise map to detect smoothing or grain inconsistencies..."
+                elif node_name == "strings_audit":
+                    thought_msg = "📜 **Data Miner**: Scanning binary data for hidden text, software signatures, and AI prompts..."
+                elif node_name == "pca_analysis":
+                    thought_msg = "📐 **Geometry Engine**: Performing Principal Component Analysis (PCA) to detect color space anomalies..."
+                elif node_name == "luminance_check":
+                    thought_msg = "💡 **Lighting Analyst**: Mapping luminance gradients to verify shadow direction and focus consistency..."
+                elif node_name == "clone_detection":
+                    thought_msg = "👯 **Pattern Hunter**: Identifying duplicated keypoints to detect Copy-Move (Cloning) forgery..."
+                elif node_name == "osint":
+                    thought_msg = "🌐 **OSINT Agent**: Searching global databases for reverse image matches..."
+                elif node_name == "exam_router":
+                    thought_msg = "🔄 **Router**: Evaluating node results and optimizing remaining queue..."
+                elif node_name == "confidence":
+                    thought_msg = "⚖️ **Confidence Engine**: Synthesizing evidence into a final trust score..."
+                elif node_name == "report":
+                    thought_msg = "📝 **Writer Agent**: Compiling final forensic summary..."
+                else:
+                    thought_msg = f"⚙️ **System**: Processing {node_name}..."
+
+                thought_placeholder.markdown(f"""
+                    <div style="
+                        background-color: #f0f2f6; 
+                        border-left: 5px solid #667eea; 
+                        padding: 15px; 
+                        border-radius: 5px; 
+                        margin: 20px 0; 
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                        animation: fadeIn 0.5s;
+                    ">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.5rem;">🤖</span>
+                            <div>
+                                <div style="font-weight: 700; color: #2E4057; font-size: 0.9rem; text-transform: uppercase;">Active Thought Process</div>
+                                <div style="color: #444; font-family: 'Inter', sans-serif; font-size: 1rem;">{thought_msg}</div>
+                            </div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.session_state.results = final_state
+        thought_placeholder.empty() 
+        st.rerun() 
+        
+    except Exception as e:
+        st.error(f"Analysis Pipeline Error: {e}")
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 tab1, tab2, tab3 = st.tabs(["📊 Verification Results", "🔍 Audit Logs", "ℹ️ Methodology & Calculation"])
 
@@ -282,7 +331,6 @@ with tab1:
         score = int(res.get('confidence_score', 0) * 100)
         label = res.get("confidence_label", "Unknown")
         count = len(res.get('conclusions', {}))
-
 
         st.markdown(f"""
         <div class="metric-container">
@@ -317,32 +365,36 @@ with tab2:
         with c1:
             st.subheader("✅ Conclusion Details")
             for node, conclusion in res.get('conclusions', {}).items():
-                header_name = "Error Level Analysis (ELA)" if node == "ela" else node.replace('_', ' ').title()
+                header_name = node.replace('_', ' ').title()
                 with st.expander(f"{header_name}", expanded=True):
                     st.write(conclusion)
         with c2:
             st.subheader("⏭️ Process Optimization")
             for node, reason in res.get('skipped_exams', {}).items():
-                header_name = "Error Level Analysis (ELA)" if node == "ela" else node.replace('_', ' ').title()
+                header_name = node.replace('_', ' ').title()
                 with st.expander(f"Skipped: {header_name}"):
                     st.write(reason)
         st.divider()
         st.subheader("🛠️ Technical Data Export")
-        st.json({"metadata": res.get("metadata"), "Error Level Analysis (ELA)": res.get("ela"), "osint": res.get("osint")})
+        
+        export_data = {
+            "metadata": res.get("metadata"),
+            "ela": res.get("ela"),
+            "noise_analysis": res.get("noise_analysis"),
+            "strings_audit": res.get("strings_audit"),
+            "pca_analysis": res.get("pca_analysis"),
+            "luminance_check": res.get("luminance_check"),
+            "clone_detection": res.get("clone_detection"),
+            "osint": res.get("osint")
+        }
+        st.json(export_data)
 
 with tab3:
     st.markdown("## 🧠 How the Analysis is Calculated")
     
     st.markdown("### 1. Orchestration & Planning")
-    st.write("The system utilizes a **StateGraph** to manage a multi-step forensic audit. An initial **'Planner'** agent evaluates the extracted metadata to determine which specific forensic nodes—such as Error Level Analysis (ELA) or OSINT—are necessary.")
+    st.write("The system utilizes a **StateGraph** to manage a multi-step forensic audit. An initial **'Planner'** agent evaluates the extracted metadata to determine which specific forensic nodes are necessary. The system employs **Iterative Memory**, meaning each exam 'sees' the results of the previous exams to check for contradictions.")
 
-    st.markdown("""
-    * **Dynamic Investigation Scoping**: The Planner analyzes metadata to populate a `planned_run` queue, identifying only the examinations required to reach a high-confidence conclusion while skipping redundant steps.
-    * **State-Persistent Orchestration**: A central `ForensicState` object tracks all visual descriptions, technical metadata, and individual node conclusions to maintain data integrity throughout the audit.
-    * **Deterministic Routing**: The orchestrator follows 'Hard Invariants' where the routing space strictly shrinks after each node is executed, preventing infinite loops and ensuring a final report is always generated.
-    * **Adaptive Fail-Safes**: If the Planner cannot reach a deterministic decision, the system defaults to a baseline verification (e.g., Visual Environment) to ensure forensic coverage is never compromised.
-    """)
-    
     st.markdown("### 2. Forensic Node Methodology")
     st.markdown("""
 <style>
@@ -398,11 +450,31 @@ with tab3:
     </div>
     <div class="method-card" style="border-left-color: #667eea;">
         <div class="method-title"><span class="method-icon">📉</span> Error Level Analysis</div>
-        <p class="method-text">Identifies manipulation by detecting <b>JPEG compression variances</b>. Localized inconsistencies in the error level often pinpoint added, removed, or retouched visual elements.</p>
+        <p class="method-text">Identifies manipulation by detecting <b>JPEG compression variances</b>. Localized inconsistencies often pinpoint added or retouched visual elements.</p>
     </div>
     <div class="method-card" style="border-left-color: #fdbb2d;">
         <div class="method-title"><span class="method-icon">👁️</span> Visual Environment</div>
-        <p class="method-text">Leverages <b>Vision-Language Models</b> to verify semantic consistency. It ensures the visual scene (lighting, weather, objects) logically matches the recorded metadata context.</p>
+        <p class="method-text">Leverages <b>Vision-Language Models</b> to verify semantic consistency (lighting, weather, objects) against recorded metadata.</p>
+    </div>
+    <div class="method-card" style="border-left-color: #e53e3e;">
+        <div class="method-title"><span class="method-icon">🌫️</span> Noise Residue</div>
+        <p class="method-text">Analyzes <b>noise distribution</b>. Extremely low noise often indicates AI generation, while inconsistent noise indicates splicing.</p>
+    </div>
+    <div class="method-card" style="border-left-color: #805ad5;">
+        <div class="method-title"><span class="method-icon">📜</span> Strings Audit</div>
+        <p class="method-text">Scans binary data for hidden text strings, such as <b>AI prompt parameters</b> (Stable Diffusion, Midjourney) or editing software traces.</p>
+    </div>
+    <div class="method-card" style="border-left-color: #38a169;">
+        <div class="method-title"><span class="method-icon">📐</span> PCA Geometry</div>
+        <p class="method-text">Uses <b>Principal Component Analysis</b> to reconstruct the image and detect color space anomalies that suggest foreign objects were inserted.</p>
+    </div>
+    <div class="method-card" style="border-left-color: #d69e2e;">
+        <div class="method-title"><span class="method-icon">💡</span> Luminance Check</div>
+        <p class="method-text">Maps light falloff and shadows using <b>Sobel gradients</b> to determine if lighting direction is consistent across the entire scene.</p>
+    </div>
+    <div class="method-card" style="border-left-color: #3182ce;">
+        <div class="method-title"><span class="method-icon">👯</span> Clone Detection</div>
+        <p class="method-text">Uses <b>ORB feature matching</b> to find keypoints that are suspiciously identical but spatially separated (Copy-Move Forgery).</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -417,4 +489,4 @@ with tab3:
 - **Dhruv Arora** Enrollment: 992401040023  """)
 
 st.markdown("---")
-st.caption("Forensic Image Analyzer v2.0 | Team ChaiKadak")
+st.caption("By Team ChaiKadak")

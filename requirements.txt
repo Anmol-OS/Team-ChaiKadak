@@ -14,3 +14,5 @@ requests
 python-dotenv
 hf_xet
 torchvision
+scikit-learn
+scikit-image
